@@ -1,6 +1,7 @@
 # 一般来说这是需要写代码的涉及到一些多线程编程的题目。大概意思是设计一个允许用户提交command 的引擎。
 # 当提交完command后返回一个object 能够查看 这个command 执行的状态，如果完成了，还能掉用用户传的回调函数对结果进行操作。
-
+# chatgpt answer: https://chatgpt.com/s/t_68e70fb0d2548191bf9adcfe173bbe89
+# https://g.co/gemini/share/e5e881efe087
 import threading
 import queue
 import traceback

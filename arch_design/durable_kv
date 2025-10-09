@@ -9,3 +9,6 @@ design: k-v store.  Followup: WAL, snapshot
 需要support high read/write，low latency，而且data需要persistent
 threadsafe hashmap 的lock是怎么optimize的
 主要考察了durability，reading writing performance 以及data consistency
+
+
+https://chatgpt.com/s/t_68e747bd29bc81919eb4836313a82122
