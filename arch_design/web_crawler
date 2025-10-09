@@ -1,0 +1,5 @@
+从single thread开始写，目标是给定一个root url访问三层之内所有的url, 访问了以后url会存在本地的disk里 （每一个url都可以找到其他的url，也就如果看成是一个图，就最多走三步）
+multi thread需要考虑的问题，如何保证不访问之前访问过的url，在给定network，cpu和内存的前提下，是应该增加thread还是减少thread
+如果thread过多怎么办，如何管理线程
+从single thread到multi thread一步一步会指引我怎么去想，怎么去解决。写代码的时候只需要写伪代码就可以了，如果有需要什么新的函数 (例如fork，或者是ThreadPool)，面试官会提供给你想要的函数以及功能，但是如果你不问他就不会说。给定network cpu memory的那个问题的问法就是在什么情况下你会选择增加thread数量，CPU = 50% Network = 100% Memory = 30%这种情况需不需要增加thread。最后thread过多的处理，我和他聊了一下线程池的工作方式，然后他给我提供了一个对象，让我在原来的基础上改了一下代码
+考虑的都是多线程解决performance瓶颈的

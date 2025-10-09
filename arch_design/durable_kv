@@ -1,0 +1,11 @@
+durable KV，之前面经里一般有两个重点，一个是in memory map的fine-grained lock，
+一个是WAL存什么和怎么recover，但是这一轮面试官还重点问了snapshot和WAL的coordination
+，比如一个idea是每当成功写一个snapshot之后就可以重新开一个file写WAL，这样recover的时候只需要读最新的WAL file
+
+设计一个KV store 要求durable并且优化read的perf 可以假设所有的kv对都可以fit memory
+
+design 单机 kv store 注意WAL和读写锁的顺序 fine grained lock
+design: k-v store.  Followup: WAL, snapshot
+需要support high read/write，low latency，而且data需要persistent
+threadsafe hashmap 的lock是怎么optimize的
+主要考察了durability，reading writing performance 以及data consistency
