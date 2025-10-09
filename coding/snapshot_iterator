@@ -1,0 +1,55 @@
+# 要求实现SnapshotSet Interface，能够用iterator()取某一时刻这个set的所有元素，在调用iterator()和使用Iterator<T>之间，可以对SnapshotSet进行修改，不考虑多线程，所有操作都是顺序执行:
+
+# // java
+# // interface SnapshotSet<T> {
+# //       void add(T e);
+# //       void remove(T e);
+# //       boolean contains(T e);
+# //       Iterator<T> iterator(); // iterator() should return a snapshot of the elements in the collection at the time the method was called.
+# // }
+
+
+# 例子:
+
+# // Add | Remove
+# // 5 |
+# // 2 |
+# // 8 |
+# // | 5
+# // --------- it <- iterator() (iterator only created, not used yet)，此时it里有2和8。
+# // 1 |
+# // --------- contains(2) = true
+# // | 2
+# // --------- contains(2) = false
+# // --------- [x for x in it] = [2, 8] (No ordering guarantees)，把2和8读出来。
+
+# 计一个SnapshotSet，除了基本的set功能，需要考虑snapshot的特性，比如在任意时刻都可能会有client来基于目前的snapshot来create一个iterator，在这个时间create的iterator只能读取目前的set值而不受之后update得影响，举例
+
+# ss = SnapshotSet([1, 2, 3])
+# ss.add(4)
+# iter1 = ss.iterator()
+# ss.remove(1)
+# iter2 = ss.iterator()
+# ss.add(6)
+
+# ...
+
+# 那这样iter1能够遍历的数据应该是 1，2，3，4；iter2能够遍历的数据应该是2，3，4
+
+# 脑子木了一直没想到除了每次iterator()被call的时候建立一个copy之外别的办法。。。后来面试官点播才明白我们其实是需要一个version number，每次iterator()被call就version number加1，这样之后的新的update就应该用最新的version number。然后每个iterator只能读到它所对应的version number的所有数据。
+
+# 比如可以用一个map，记录下每个值的操作记录（同version的add/remove可以进行相应的压缩），用上面的例子就是
+# map = {}
+# 初始version number = 1
+# map[1] = [(add, 1)] # 分别是operation type和version number
+# map[2] = [(add, 1)]
+# map[3] = [(add, 1)]
+# map[4] = [(add, 1)]
+# iter1 --> 记录下当前读取的version number是1，同时全局的version number++
+# map[1] = [(add, 1), (remove, 2)] # 在version是1的时候加入的值，在version是2的时候才删除的，所以version是1的时候的iterator能够读到1这个值
+# iter2 --> 记录下当前读取的version number是2，同时全局的version number++
+# map[6]‍‍‍‍‌‍‌‌‌‌‍‌‌‍‌‍‌‌‌‍ = [(add, 3)]
+
+# 这样记录下来就发现最后每个iterator只需要遍历map里面的所有KV pair，找到V数组里面<=自己记录的version number的最后的操作，是add就证明有这个值，空或者是remove就证明没有这个值。
+
+# 其实这个类似基本的数据库snapshot的实现方式version vector，有想法最重要，实现起来还挺简单的，真佩服这题出的确实挺精妙的！
