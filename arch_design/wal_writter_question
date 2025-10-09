@@ -1,0 +1,206 @@
+; Design WAL writer, single machine, highest throughput, log is durablely written before the call returns to caller.
+; 和地里的log/data writer是一样的。Multi-thread，每个thread需要push data to file。怎么样可以Low latency，high throughput，recover from server crash。
+; Multi-thread，每个thread需要push data to file。怎么样可以Low latency，high throughput，recover from server crash。
+; 需要能支持多线程并发写log到disk里，注意处理race condition，写psuedo code就行。并发这一块我也是不熟悉所以也没咋完成
+; function好像很简单就是给input bytes然后写到file里，latency尽可能低并且保证durability。 再具体记不清楚了
+; 感觉考点就是level db的WAL batch write的实现，很多中文论坛都可以找到
+   test test
+设计如下的Library：
+class DataWriter {
+    public DataWriter(String filePathOnDisk) {
+    }
+
+    public void push(byte[] data) {
+    }
+}
+
+现在有一个单机server，你这个Lib同时被上千个Thread使用，他们不间断的call “push” method，那么这些被push的bytes，需要你的Lib以append的形式写入disk上的filePath。
+
+你要设计并填充pseudo code，使得：
+1. 每个Thread push进来的data，保证Thread-Level有序性。比如Thread_A push d1，d2，同时Thread_B push d3，d4。那么写完的file content可以是d1_d2_d3_d4或者d1_d3_d4_d2，因为d1必须早于d2，d3必须早于d4。
+2. high throughput，low latency。我的理解是最好每个Thread call push的时候，不要被block/wait。
+3. 展现一下具体bytes data如何被写入disk file。
+4. 讨论下persistence，如何在server crush情况下做recovery
+Perfect — you’re summarizing a **classic system design + concurrency + storage** interview question often inspired by **LevelDB / RocksDB WAL writer** internals.
+
+Let’s make it crystal clear 👇
+
+---
+
+## 🧩 What the Interviewer Is Asking
+
+> “Design a Write-Ahead Log (WAL) writer on a **single machine** that supports **multi-threaded concurrent log writes**, ensures **durability before returning**, and achieves **low latency + high throughput**, while being **recoverable after crash**.”
+
+---
+
+## 🧠 What They’re Testing
+
+They want to see if you understand:
+
+1. **Durability guarantees** — the log must be on disk (`fsync`) before the write call returns.
+2. **Concurrency control** — many threads writing logs concurrently → avoid race conditions.
+3. **Batching and I/O optimization** — reduce `fsync` cost and improve throughput.
+4. **Crash recovery** — replay logs on restart.
+5. **System design tradeoffs** — throughput vs latency vs durability.
+
+---
+
+## ⚙️ Key Design Challenges
+
+| Problem                        | Naive Approach             | Issue                     |
+| ------------------------------ | -------------------------- | ------------------------- |
+| Multiple threads want to write | Each thread calls `fsync`  | Too slow                  |
+| Sequential log file writes     | Use lock around file       | Bottleneck                |
+| Disk flush is expensive        | Flush per record           | High latency              |
+| Need durability                | Must sync before returning | Hard to batch efficiently |
+
+---
+
+## 🚀 High-Level Design Idea
+
+Exactly what **LevelDB / RocksDB** do: **WAL Batching + Single Writer Thread**.
+
+---
+
+### 1️⃣ Architecture Overview
+
+```
++-----------------------------+
+| Multiple Writer Threads     |
+|   (clients)                 |
+|      |                      |
+|      v                      |
+|   WAL Writer Queue  --->  [ Single WAL Writer Thread ]
+|                             |    (sequential disk write)
+|                             v
+|                           Log File (fsync)
++-----------------------------+
+```
+
+---
+
+### 2️⃣ How It Works
+
+#### Step 1. Multiple threads submit log entries
+
+Each client thread does:
+
+```python
+log_writer.submit(bytes)
+```
+
+→ places its log record into a **shared queue** (e.g., `deque` or `BlockingQueue`) with a **future/promise** to signal when done.
+
+---
+
+#### Step 2. Single writer thread batches writes
+
+One dedicated thread:
+
+* Collects all pending log records from the queue.
+* Concatenates them into one big buffer.
+* Writes them sequentially to disk.
+* Calls `fsync()` **once** for the entire batch.
+* Marks all futures in the batch as **complete**.
+
+This is called **group commit** — LevelDB does this.
+
+---
+
+#### Step 3. Return to caller only after durable write
+
+Each writer thread waits on its **future** until the WAL writer signals fsync is complete.
+→ Guarantees durability while batching many threads together.
+
+---
+
+### 3️⃣ Crash Recovery
+
+After restart:
+
+* Read WAL file sequentially.
+* Replay all log records to reconstruct in-memory state.
+
+Since we always `fsync()` before ack, all committed logs are durable.
+
+---
+
+## 🧰 Pseudo Code Example (Simplified)
+
+```python
+import threading, queue, os
+
+class WALWriter:
+    def __init__(self, file_path):
+        self.log_file = open(file_path, "ab", buffering=0)
+        self.queue = queue.Queue()
+        self.lock = threading.Lock()
+        self.thread = threading.Thread(target=self._writer_loop, daemon=True)
+        self.thread.start()
+
+    def submit(self, data: bytes):
+        event = threading.Event()
+        self.queue.put((data, event))
+        event.wait()   # wait until fsync done
+        return True
+
+    def _writer_loop(self):
+        while True:
+            # batch collect
+            batch = []
+            try:
+                data, event = self.queue.get(timeout=0.01)
+                batch.append((data, event))
+            except queue.Empty:
+                continue
+
+            # drain rest of queue for batching
+            while not self.queue.empty():
+                batch.append(self.queue.get_nowait())
+
+            # sequential write
+            with self.lock:
+                for data, _ in batch:
+                    self.log_file.write(data)
+                self.log_file.flush()
+                os.fsync(self.log_file.fileno())
+
+            # notify all threads in batch
+            for _, event in batch:
+                event.set()
+```
+
+---
+
+## ⚖️ Design Tradeoffs
+
+| Choice                     | Effect                                       |
+| -------------------------- | -------------------------------------------- |
+| **Single writer thread**   | Prevents race condition, maintains log order |
+| **Batch fsync**            | Amortizes disk I/O cost                      |
+| **Blocking submit**        | Guarantees durability before return          |
+| **Asynchronous queue**     | Enables concurrency                          |
+| **fsync frequency tuning** | Tradeoff between latency and throughput      |
+
+---
+
+## 🧠 Optional Enhancements
+
+* **Double buffering** to reduce lock time.
+* **Group commit timeout** (flush every X ms or Y records).
+* **Preallocated log segments** for faster writes.
+* **Memory-mapped files** (mmap) for advanced performance.
+
+---
+
+## 🧩 In Short
+
+✅ **Multi-threaded submit**
+✅ **Single-threaded batched write + fsync**
+✅ **Durability guarantee before returning**
+✅ **Crash recoverable**
+✅ **Optimized throughput via batching**
+
+---
+
+Would you like me to extend this into a **system design interview answer format** (with tradeoffs, diagrams, and optional optimizations) — like how you’d explain it aloud in 3–5 minutes to an interviewer?
