@@ -18,6 +18,7 @@ class SnapshotSet:
             if self.history[e][-1][0] == 'remove':
                 # Remove the 'remove' at current version
                 self.history[e].pop()
+                return
         
         self.history[e].append(('add', self.version))
     
