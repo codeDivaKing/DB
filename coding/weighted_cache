@@ -1,0 +1,72 @@
+from sortedcontainers import SortedDict
+
+class WeightedCache:
+    """
+    WeightedCache stores key-value pairs with an associated weight.
+    If the total weight exceeds the limit, the entry with the largest weight is removed.
+    """
+
+    def __init__(self, total_weight_limit: int):
+        """
+        Initialize the cache with a total weight limit.
+        :param total_weight_limit: Maximum sum of all weights allowed in the cache
+        """
+        self.total_weight_limit = total_weight_limit
+        self.current_total_weight = 0
+        self.key_map = {}  # key -> (value, weight)
+        self.weight_map = SortedDict()  # weight -> set of keys
+
+    def get(self, key):
+        """
+        Retrieve the value associated with the key.
+        :param key: Key to look up
+        :return: Value if key exists, else None
+        """
+        if key in self.key_map:
+            return self.key_map[key][0]
+        return None
+
+    def put(self, key, value, weight: int):
+        """
+        Insert or update a key-value pair with a weight.
+        If total weight exceeds limit, evict the entry with the largest weight.
+        :param key: Key to insert or update
+        :param value: Value to store
+        :param weight: Weight of the key-value pair
+        """
+        # Remove old weight if key exists
+        if key in self.key_map:
+            old_weight = self.key_map[key][1]
+            self._remove_weight_key(old_weight, key)
+            self.current_total_weight -= old_weight
+
+        # Add/update key
+        self.key_map[key] = (value, weight)
+        self.weight_map.setdefault(weight, set()).add(key)
+        self.current_total_weight += weight
+
+        # Evict largest-weight entries until under limit
+        while self.current_total_weight > self.total_weight_limit:
+            largest_weight = self.weight_map.peekitem(-1)[0]
+            keys_with_largest_weight = self.weight_map[largest_weight]
+            evict_key = keys_with_largest_weight.pop()
+            evict_weight = self.key_map.pop(evict_key)[1]
+            self.current_total_weight -= evict_weight
+            if not keys_with_largest_weight:
+                del self.weight_map[largest_weight]
+
+    def _remove_weight_key(self, weight, key):
+        """Helper to remove a key from weight_map"""
+        keys = self.weight_map.get(weight)
+        if keys:
+            keys.discard(key)
+            if not keys:
+                del self.weight_map[weight]
+
+    def get_current_total_weight(self):
+        """Return the current total weight of the cache."""
+        return self.current_total_weight
+
+    def size(self):
+        """Return the number of entries in the cache."""
+        return len(self.key_map)
