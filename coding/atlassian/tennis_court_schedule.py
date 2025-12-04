@@ -61,3 +61,91 @@ bookings.assign_courts([
 
     
 print(bookings.get_bookings())
+
+# (b) Add Mandatory Maintenance Time Between Bookings
+
+class Bookings:
+    def __init__(self, maintenance: int):
+        self.bookings = []
+        self.maintenance = maintenance
+
+    def assign_courts(self, bookings: list[BookingRecord]) -> list[tuple[int, int]]:
+        # Sort bookings by start time
+        bookings.sort(key=lambda x: x.start_time)
+
+        used = []  # min-heap: (available_time, court_id)
+        next_id = 0
+
+        for b in bookings:
+            # Reuse court if earliest court is available
+            if used and used[0][0] <= b.start_time:
+                _, court_id = heapq.heappop(used)
+            else:
+                court_id = next_id
+                next_id += 1
+
+            # Assign booking
+            available_time = b.finish_time + self.maintenance
+            heapq.heappush(used, (available_time, court_id))
+            self.bookings.append((b.id, court_id))
+
+        return self.bookings
+
+    def get_bookings(self) -> list[tuple[int, int]]:
+        return self.bookings
+
+
+# (c) Court Durability + Long Maintenance
+
+# Now each court has:
+
+# A small maintenance time X after every booking
+
+# A long maintenance period Y after the court has handled Durability = D bookings
+
+# Meaning:
+
+# Every booking triggers small cleanup (X minutes)
+
+# After every D bookings, the court becomes unavailable for an additional Y minutes
+
+
+class Bookings:
+    def __init__(self, maintenance: int, durability: int, long_maintenance: int):
+        self.bookings = []
+        self.maintenance = maintenance          # X
+        self.durability = durability            # D
+        self.long_maintenance = long_maintenance # Y
+
+    def assign_courts(self, bookings: list[BookingRecord]) -> list[tuple[int, int]]:
+        bookings.sort(key=lambda x: x.start_time)
+
+        used = []                         # (available_time, court_id)
+        usage_count = {}                  # court_id -> uses since last long maintenance
+        next_id = 0
+
+        for b in bookings:
+            # reuse earliest available court if possible
+            if used and used[0][0] <= b.start_time:
+                _, court_id = heapq.heappop(used)
+            else:
+                court_id = next_id
+                next_id += 1
+
+            # update durability
+            usage_count[court_id] = usage_count.get(court_id, 0) + 1
+
+            # compute next availability
+            if usage_count[court_id] == self.durability:
+                available = b.finish_time + self.long_maintenance
+                usage_count[court_id] = 0  # reset after long maintenance
+            else:
+                available = b.finish_time + self.maintenance
+
+            heapq.heappush(used, (available, court_id))
+            self.bookings.append((b.id, court_id))
+
+        return self.bookings
+
+    def get_bookings(self):
+        return self.bookings
