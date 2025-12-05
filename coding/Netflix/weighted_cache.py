@@ -26,7 +26,7 @@ class WeightedCache:
 
     def get(self, key):
         if key not in self.store:
-            return None
+            return None 
         return self.store[key][0]
 
     def put(self, key, value, weight):
